@@ -1,0 +1,21 @@
+{
+  "name": "@masumi-network/nori-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p ../../tsconfig.json",
+    "dev": "tsx --conditions source src/server.ts",
+    "start": "node ../../dist/apps/coworkers-core/src/server.js",
+    "test": "tsx --conditions source src/__tests__/runTests.ts",
+    "typecheck": "tsc -p ../../tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.75.5",
+    "@earendil-works/pi-ai": "^0.75.5",
+    "@masumi-network/pi-sokosumi": "github:masumi-network/pi-sokosumi"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

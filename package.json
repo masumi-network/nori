@@ -1,0 +1,30 @@
+{
+  "name": "@masumi-network/nori",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent Railway-deployed Pi-agent runtime for Nori.",
+  "license": "MIT",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "pnpm typecheck && pnpm test",
+    "dev": "pnpm --filter @masumi-network/nori-core dev",
+    "start": "pnpm --filter @masumi-network/nori-core start",
+    "test": "pnpm --filter @masumi-network/nori-core test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.75.5",
+    "@earendil-works/pi-ai": "^0.75.5",
+    "@masumi-network/pi-sokosumi": "github:masumi-network/pi-sokosumi"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

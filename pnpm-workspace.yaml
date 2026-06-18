@@ -1,0 +1,5 @@
+packages:
+  - "apps/*"
+
+onlyBuiltDependencies:
+  - "@masumi-network/pi-sokosumi"

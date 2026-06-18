@@ -1,0 +1,176 @@
+# Nori - DevRel Agent for Masumi ecosystem
+
+agent_id: nori
+display_name: Nori
+
+identity:
+  email: nori@agents.utxoag.com
+  twitter_handle: nori_masumi
+  teams_bot_id: null
+
+skills:
+  - pdf           # Can create/read PDFs
+  - docx          # Can create Word documents
+  - xlsx          # Can create Excel spreadsheets
+  - pptx          # Can create PowerPoint presentations
+  - email         # Can send emails
+
+contexts:
+  triage:
+    model: sonnet
+    max_thinking_tokens: 8000
+    tools:
+      - WebSearch
+      - Read
+    mcp_servers:
+      - memory
+      - contacts
+      - work
+      - inbound
+      - sokosumi
+      - sokosumi_pulse
+      - knowledge
+      - linear
+    prompt_layer: triage
+
+  execution:
+    model: sonnet
+    max_thinking_tokens: 16000
+    tools:
+      - WebSearch
+      - WebFetch
+      - Read
+      - Write
+      - Edit
+      - Glob
+      - Grep
+      - Skill
+      - Bash
+    mcp_servers:
+      - memory
+      - contacts
+      - work
+      - inbound
+      - sokosumi
+      - sokosumi_pulse
+      - twitter
+      - github
+      - knowledge
+      - telegram
+      - linear
+      - sokosumi_db
+    prompt_layer: execution
+
+  interactive:
+    model: sonnet
+    max_thinking_tokens: 10000
+    tools:
+      - WebSearch
+      - WebFetch
+    mcp_servers:
+      - memory
+      - contacts
+      - work
+      - inbound
+      - sokosumi
+      - sokosumi_pulse
+      - knowledge
+      - linear
+      - sokosumi_db
+    prompt_layer: triage
+
+  telegram_execution:
+    model: sonnet
+    max_thinking_tokens: 16000
+    tools:
+      - WebSearch
+      - WebFetch
+      - Read
+      - Write
+      - Bash
+      - Skill
+    mcp_servers:
+      - memory
+      - contacts
+      - knowledge
+      - telegram
+      - sokosumi
+      - work
+    prompt_layer: execution
+
+mcp_servers:
+  memory:
+    enabled: true
+  contacts:
+    enabled: true
+  inbound:
+    enabled: true
+    env:
+      INBOUND_API_KEY: ${NORI_INBOUND_API_KEY}
+  sokosumi:
+    enabled: true
+  twitter:
+    enabled: true
+    env:
+      TWITTER_ACCESS_TOKEN: ${NORI_TWITTER_ACCESS_TOKEN}
+      TWITTER_ACCESS_SECRET: ${NORI_TWITTER_ACCESS_SECRET}
+  github:
+    enabled: true
+    env:
+      GITHUB_APP_ID: ${GITHUB_APP_ID}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY}
+      GITHUB_APP_INSTALLATION_ID: ${GITHUB_APP_INSTALLATION_ID}
+  work:
+    enabled: true
+  sokosumi_pulse:
+    enabled: true
+  knowledge:
+    enabled: true
+  telegram:
+    enabled: true
+  linear:
+    enabled: true
+    env:
+      LINEAR_API_KEY: ${NORI_LINEAR_API_KEY}
+  sokosumi_db:
+    enabled: true
+    env:
+      NORI_SOKOSUMI_DB_URL: ${NORI_SOKOSUMI_DB_URL}
+
+interfaces:
+  email:
+    enabled: true
+    triage_context: triage
+    execution_context: execution
+  twitter:
+    enabled: true
+    default_context: execution
+  discord:
+    enabled: true
+    default_context: interactive
+  telegram:
+    enabled: true
+    default_context: interactive
+  github:
+    enabled: true
+    default_context: execution
+  completions:
+    enabled: true
+    default_context: interactive
+  responses:
+    enabled: true
+    default_context: interactive
+  sokosumi:
+    enabled: true
+    default_context: execution
+
+capabilities:
+  agent_execution: false
+  document_creation: true
+  twitter_posting: false
+  email_reply: true
+
+memory:
+  isolated: true
+
+owner_user_id: albina.nikiforova@nmkr.io
