@@ -16,7 +16,7 @@ importers:
         version: 0.75.5(ws@8.21.0)(zod@4.4.3)
       '@masumi-network/pi-sokosumi':
         specifier: github:masumi-network/pi-sokosumi
-        version: https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/41a701bfedec6304334f0339506d6001fef1f987(@earendil-works/pi-ai@0.75.5(ws@8.21.0)(zod@4.4.3))
+        version: https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/1823fa36c5ad48e34c74f515b6229674c3d6cd80(@earendil-works/pi-ai@0.75.5(ws@8.21.0)(zod@4.4.3))
     devDependencies:
       '@types/node':
         specifier: ^22.15.30
@@ -38,7 +38,7 @@ importers:
         version: 0.75.5(ws@8.21.0)(zod@4.4.3)
       '@masumi-network/pi-sokosumi':
         specifier: github:masumi-network/pi-sokosumi
-        version: https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/41a701bfedec6304334f0339506d6001fef1f987(@earendil-works/pi-ai@0.75.5(ws@8.21.0)(zod@4.4.3))
+        version: https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/1823fa36c5ad48e34c74f515b6229674c3d6cd80(@earendil-works/pi-ai@0.75.5(ws@8.21.0)(zod@4.4.3))
 
 packages:
 
@@ -330,9 +330,9 @@ packages:
       '@modelcontextprotocol/sdk':
         optional: true
 
-  '@masumi-network/pi-sokosumi@https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/41a701bfedec6304334f0339506d6001fef1f987':
-    resolution: {tarball: https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/41a701bfedec6304334f0339506d6001fef1f987}
-    version: 0.1.4
+  '@masumi-network/pi-sokosumi@https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/1823fa36c5ad48e34c74f515b6229674c3d6cd80':
+    resolution: {tarball: https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/1823fa36c5ad48e34c74f515b6229674c3d6cd80}
+    version: 0.1.5
     engines: {node: '>=22.19.0'}
     peerDependencies:
       '@earendil-works/pi-ai': ^0.75.5
@@ -986,7 +986,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@masumi-network/pi-sokosumi@https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/41a701bfedec6304334f0339506d6001fef1f987(@earendil-works/pi-ai@0.75.5(ws@8.21.0)(zod@4.4.3))':
+  '@masumi-network/pi-sokosumi@https://codeload.github.com/masumi-network/pi-sokosumi/tar.gz/1823fa36c5ad48e34c74f515b6229674c3d6cd80(@earendil-works/pi-ai@0.75.5(ws@8.21.0)(zod@4.4.3))':
     dependencies:
       '@earendil-works/pi-ai': 0.75.5(ws@8.21.0)(zod@4.4.3)
 

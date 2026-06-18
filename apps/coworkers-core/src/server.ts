@@ -1,5 +1,6 @@
 import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createPiAgentChatRouteHandler } from "@masumi-network/pi-sokosumi/chat";
 import { assertAuthorized } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { dispatchCoworkerRequest } from "./dispatch.js";
@@ -10,6 +11,12 @@ import { createSokosumiTaskRequest, startCoworkerSokosumiWorker } from "./sokosu
 import { AGENT_DESCRIPTION, AGENT_DISPLAY_NAME, AGENT_ID, CoworkerRequestError, normalizeCoworkerId, normalizeSurface } from "./types.js";
 
 const config = loadConfig();
+const chatRoute = createPiAgentChatRouteHandler({
+  authorize: ({ req }) => assertAuthorized(req, config),
+  rateLimit: ({ req }) => assertWithinRateLimit(req, config),
+  normalizeRequest: ({ body, headers }) => normalizeChatRequest(body, headers),
+  handleChat: async ({ request }) => dispatchCoworkerRequest(request, config)
+});
 
 startCoworkerSokosumiWorker({ config });
 
@@ -53,6 +60,8 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse) {
     });
   }
 
+  if (await chatRoute(req, res)) return;
+
   if (req.method !== "POST") {
     return sendJson(res, 404, { error: "Not found" });
   }
@@ -61,12 +70,6 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse) {
   assertWithinRateLimit(req, config);
 
   const body = await readJson(req);
-
-  if (url.pathname === "/v1/chat") {
-    const request = normalizeChatRequest(body, req.headers);
-    const result = await dispatchCoworkerRequest(request, config);
-    return sendJson(res, 200, result);
-  }
 
   if (url.pathname === "/sokosumi/mock-task" && config.sokosumiMockEndpointEnabled) {
     const request = createSokosumiTaskRequest({ task: body?.task || body, event: body?.event || {} });
