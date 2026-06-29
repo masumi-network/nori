@@ -15,7 +15,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.75.5",
+    "@earendil-works/pi-agent-core": "^0.80.2",
     "@earendil-works/pi-ai": "^0.75.5",
     "@masumi-network/pi-sokosumi": "github:masumi-network/pi-sokosumi"
   },
