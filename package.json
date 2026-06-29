@@ -20,7 +20,7 @@
     "@masumi-network/pi-sokosumi": "github:masumi-network/pi-sokosumi"
   },
   "devDependencies": {
-    "@types/node": "^22.15.30",
+    "@types/node": "^26.0.1",
     "tsx": "^4.20.0",
     "typescript": "^5.8.3"
   },
