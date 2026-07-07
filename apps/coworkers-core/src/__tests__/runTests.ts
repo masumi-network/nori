@@ -146,6 +146,16 @@ async function testRuntimeTools() {
   assert.equal(searchResult.details.ok, true);
   assert.ok(searchResult.details.data.results.some((result: any) => result.path.includes("src/agents/nori")));
 
+  const coworkerSearchResult = await byName.search_docs.execute("search-2", {
+    query: "create a Sokosumi coworker with Pi Sokosumi"
+  });
+  assert.equal(coworkerSearchResult.details.ok, true);
+  assert.ok(
+    coworkerSearchResult.details.data.results.some((result: any) =>
+      result.path.includes("src/agents/nori/knowledge/devhub-docs.md")
+    )
+  );
+
   const observationResult = await byName.log_observation.execute("obs-1", {
     observation: "User cares about Sokosumi Pi migration status.",
     category: "preference"
