@@ -3,7 +3,7 @@ import path from "node:path";
 import { loadConfig } from "../config.js";
 import { dispatchCoworkerRequest } from "../dispatch.js";
 import { getRuntimeReadiness } from "../readiness.js";
-import { normalizeWebhookRequest } from "../normalization.js";
+import { normalizeChatRequest, normalizeWebhookRequest } from "../normalization.js";
 import { buildSystemPrompt } from "../prompts.js";
 import { createSokosumiCompletionEvent, createSokosumiTaskRequest } from "../sokosumi.js";
 import { createCoworkerRuntimeTools, RUNTIME_TOOL_NAMES } from "../tools.js";
@@ -17,6 +17,7 @@ const config = loadConfig({
 
 await testPromptLoading();
 await testWebhookNormalization();
+await testDocsSurfaceNormalization();
 await testDispatch();
 await testSokosumiTaskMapping();
 await testSokosumiTaskDefaultsToAgent();
@@ -72,6 +73,18 @@ async function testWebhookNormalization() {
   assert.equal(request.organizationId, "org-1");
   assert.equal(request.message, "Can you check this?");
   assert.equal((request.metadata?.sourcePayload as any).authorization, "[redacted]");
+}
+
+async function testDocsSurfaceNormalization() {
+  const request = normalizeChatRequest({
+    agentId: "nori",
+    surface: "docs",
+    message: "How do I create a Sokosumi coworker?"
+  });
+
+  assert.equal(request.agentId, "nori");
+  assert.equal(request.surface, "docs");
+  assert.equal(request.message, "How do I create a Sokosumi coworker?");
 }
 
 async function testDispatch() {

@@ -6,7 +6,7 @@ export const COWORKER_IDS = [AGENT_ID] as const;
 export type CoworkerId = typeof COWORKER_IDS[number];
 
 export const COWORKER_SURFACES = {
-  nori: ["email", "telegram", "discord", "github", "twitter", "sokosumi", "chat"]
+  nori: ["email", "telegram", "discord", "github", "twitter", "sokosumi", "chat", "docs"]
 } as const;
 
 export type CoworkerSurface = typeof COWORKER_SURFACES[CoworkerId][number];
