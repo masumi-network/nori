@@ -1,19 +1,20 @@
-// @ts-nocheck
-import { Agent } from "@earendil-works/pi-agent-core";
-import { streamSimple } from "@earendil-works/pi-ai";
+import { Agent, type AgentEvent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
+import { streamSimple, type Message, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { RuntimeConfig } from "./config.js";
-import { createCoworkerRuntimeTools } from "./tools.js";
+import { createCoworkerRuntimeTools, type RuntimeToolState } from "./tools.js";
 import type { CoworkerRequest, CoworkerResult } from "./types.js";
 import { AGENT_DISPLAY_NAME } from "./types.js";
 
 export async function runPiCoworkerAgent({
   request,
   systemPrompt,
-  config
+  config,
+  streamFn
 }: {
   request: CoworkerRequest;
   systemPrompt: string;
   config: RuntimeConfig;
+  streamFn?: StreamFn;
 }): Promise<CoworkerResult> {
   if (config.piAgentMockResponses) {
     return {
@@ -27,9 +28,9 @@ export async function runPiCoworkerAgent({
     throw new Error("OPENROUTER_API_KEY is required unless PI_AGENT_MOCK_RESPONSES=true.");
   }
 
-  const toolEvents = [];
-  const usage = [];
-  const toolState = {
+  const toolEvents: unknown[] = [];
+  const usage: unknown[] = [];
+  const toolState: RuntimeToolState = {
     toolResults: []
   };
   const model = createOpenRouterPiModel(config);
@@ -38,10 +39,10 @@ export async function runPiCoworkerAgent({
       systemPrompt,
       model,
       thinkingLevel: "medium",
-      tools: createCoworkerRuntimeTools(request, toolState),
-      messages: toPiMessages(request.metadata?.messages)
+      tools: createCoworkerRuntimeTools(request, toolState) as unknown as AgentTool[],
+      messages: toPiMessages(request.metadata?.messages, model)
     },
-    streamFn: (streamModel, context, options) =>
+    streamFn: streamFn || ((streamModel, context, options) =>
       streamSimple(streamModel, context, {
         ...options,
         apiKey: config.openRouterApiKey,
@@ -49,7 +50,7 @@ export async function runPiCoworkerAgent({
         maxTokens: config.openRouterMaxCompletionTokens,
         timeoutMs: 120000,
         headers: createOpenRouterHeaders(config)
-      })
+      }))
   });
 
   let replyText = "";
@@ -64,6 +65,9 @@ export async function runPiCoworkerAgent({
   });
 
   await agent.prompt(request.message);
+  if (agent.state.errorMessage) {
+    throw new Error(`Pi agent failed before producing a complete reply: ${agent.state.errorMessage}`);
+  }
   const reply = normalizeWhitespacePreserveLines(replyText) || extractLatestAssistantText(agent.state?.messages);
   if (!reply) {
     throw new Error("Pi agent completed without an assistant reply.");
@@ -78,7 +82,7 @@ export async function runPiCoworkerAgent({
   };
 }
 
-function createOpenRouterPiModel(config: RuntimeConfig) {
+function createOpenRouterPiModel(config: RuntimeConfig): Model<"openai-completions"> {
   return {
     id: config.openRouterModel,
     name: config.openRouterModel,
@@ -105,17 +109,39 @@ function createOpenRouterHeaders(config: RuntimeConfig) {
   };
 }
 
-function toPiMessages(messages: unknown) {
+type ReplayModel = Pick<Model<any>, "api" | "provider" | "id">;
+
+export function toPiMessages(messages: unknown, model: ReplayModel, now = Date.now()): Message[] {
   if (!Array.isArray(messages)) return [];
-  return messages
-    .filter((item) => item && ["user", "assistant"].includes(item.role))
-    .map((item) => ({
-      role: item.role,
-      content: normalizeWhitespacePreserveLines(normalizeContent(item.content)),
-      timestamp: Date.now()
-    }))
-    .filter((item) => item.content)
-    .slice(-12);
+  const normalized: Message[] = [];
+
+  for (const value of messages) {
+    if (!isRecord(value) || (value.role !== "user" && value.role !== "assistant")) continue;
+    const text = normalizeWhitespacePreserveLines(normalizeContent(value.content));
+    if (!text) continue;
+
+    if (value.role === "user") {
+      normalized.push({
+        role: "user",
+        content: [{ type: "text", text }],
+        timestamp: normalizeTimestamp(value.timestamp, now)
+      });
+      continue;
+    }
+
+    normalized.push({
+      role: "assistant",
+      content: [{ type: "text", text }],
+      api: model.api,
+      provider: model.provider,
+      model: model.id,
+      usage: emptyUsage(),
+      stopReason: "stop",
+      timestamp: normalizeTimestamp(value.timestamp, now)
+    });
+  }
+
+  return normalized.slice(-12);
 }
 
 function extractLatestAssistantText(messages: unknown) {
@@ -139,7 +165,7 @@ function normalizeContent(content: unknown) {
   return "";
 }
 
-function summarizePiEvent(event: any) {
+function summarizePiEvent(event: AgentEvent) {
   if (!event || typeof event !== "object") return undefined;
   if (event.type === "tool_execution_start") {
     return { type: event.type, toolName: event.toolName };
@@ -153,10 +179,10 @@ function summarizePiEvent(event: any) {
   return undefined;
 }
 
-function summarizePiMessageUsage(event: any) {
+function summarizePiMessageUsage(event: AgentEvent) {
   const message = event?.type === "message_end" ? event.message : undefined;
   if (message?.role !== "assistant") return undefined;
-  const rawUsage = message.usage && typeof message.usage === "object" ? message.usage : {};
+  const rawUsage: Record<string, any> = message.usage && typeof message.usage === "object" ? message.usage : {};
   const usage = {
     model: message.responseModel || message.model || "",
     input: normalizeNonNegativeNumber(rawUsage.input, 0),
@@ -181,4 +207,30 @@ function normalizeWhitespacePreserveLines(value: unknown) {
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function emptyUsage(): Usage {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0
+    }
+  };
+}
+
+function normalizeTimestamp(value: unknown, fallback: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

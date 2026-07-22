@@ -53,6 +53,13 @@ Required for real model calls:
 - `OPENROUTER_SITE_URL`
 - `OPENROUTER_APP_NAME`
 
+Deployment gate:
+
+- `NORI_DEPLOYMENT_SMOKE_TEST_ENABLED`
+- `NORI_DEPLOYMENT_SMOKE_TIMEOUT_MS`
+
+On Railway, the deployment smoke suite is enabled by default. At startup it sends an authenticated multi-turn request through the real local `POST /v1/chat` route with history that ends in an assistant message. The request asks the configured model to return a unique per-deployment marker and must report non-zero model token usage. `GET /healthz` remains `503` until the check passes, so Railway cannot promote a deployment that serves only a canned response, cannot call the model, or cannot replay assistant history. Set `NORI_DEPLOYMENT_SMOKE_TEST_ENABLED=false` only as an explicit emergency override.
+
 Sokosumi worker:
 
 - `SOKOSUMI_API_URL`

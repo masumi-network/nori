@@ -1,8 +1,10 @@
+import crypto from "node:crypto";
 import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createPiAgentChatRouteHandler } from "@masumi-network/pi-sokosumi/chat";
 import { assertAuthorized } from "./auth.js";
 import { loadConfig } from "./config.js";
+import { createDeploymentSmokeState, runDeploymentSmokeSuite } from "./deploymentSmoke.js";
 import { dispatchCoworkerRequest } from "./dispatch.js";
 import { normalizeChatRequest, normalizeWebhookRequest } from "./normalization.js";
 import { assertWithinRateLimit } from "./rateLimit.js";
@@ -11,20 +13,37 @@ import { createSokosumiTaskRequest, startCoworkerSokosumiWorker } from "./sokosu
 import { AGENT_DESCRIPTION, AGENT_DISPLAY_NAME, AGENT_ID, CoworkerRequestError, normalizeCoworkerId, normalizeSurface } from "./types.js";
 
 const config = loadConfig();
+const requestIds = new WeakMap<IncomingMessage, string>();
+const requestStartedAt = new WeakMap<IncomingMessage, number>();
+let deploymentSmokeState = createDeploymentSmokeState(config.deploymentSmokeTestEnabled);
 const chatRoute = createPiAgentChatRouteHandler({
   authorize: ({ req }) => assertAuthorized(req, config),
   rateLimit: ({ req }) => assertWithinRateLimit(req, config),
   normalizeRequest: ({ body, headers }) => normalizeChatRequest(body, headers),
-  handleChat: async ({ request }) => dispatchCoworkerRequest(request, config)
+  handleChat: async ({ request, req }) => {
+    const result = await dispatchCoworkerRequest(request, config);
+    console.log(JSON.stringify({
+      event: "nori_chat_completed",
+      requestId: requestIdFor(req),
+      agentId: request.agentId,
+      surface: request.surface,
+      durationMs: requestDurationMs(req)
+    }));
+    return result;
+  },
+  onError: ({ error, req }) => logRequestFailure("nori_chat_failed", error, req)
 });
 
 startCoworkerSokosumiWorker({ config });
 
 const server = http.createServer(async (req, res) => {
+  requestStartedAt.set(req, Date.now());
+  res.setHeader("x-nori-request-id", requestIdFor(req));
   try {
     await routeRequest(req, res);
   } catch (error: any) {
     const statusCode = error instanceof CoworkerRequestError ? error.statusCode : 500;
+    logRequestFailure("nori_request_failed", error, req, statusCode);
     sendJson(res, statusCode, {
       error: error?.message || "Internal server error"
     });
@@ -35,8 +54,39 @@ server.listen(config.port, () => {
   console.log(JSON.stringify({
     event: "coworkers_core_started",
     port: config.port,
-    agent: AGENT_ID
+    agent: AGENT_ID,
+    deploymentSmokeTestEnabled: config.deploymentSmokeTestEnabled
   }));
+
+  if (config.deploymentSmokeTestEnabled) {
+    void runDeploymentSmokeSuite({
+      baseUrl: `http://127.0.0.1:${config.port}`,
+      config
+    }).then((state) => {
+      deploymentSmokeState = state;
+      const logger = state.status === "passed" ? console.log : console.error;
+      logger(JSON.stringify({
+        event: state.status === "passed" ? "nori_deployment_smoke_passed" : "nori_deployment_smoke_failed",
+        checks: state.checks
+      }));
+    }).catch((error) => {
+      deploymentSmokeState = {
+        enabled: true,
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        checks: [{
+          id: "suite",
+          ok: false,
+          durationMs: 0,
+          error: error instanceof Error ? error.message : String(error)
+        }]
+      };
+      console.error(JSON.stringify({
+        event: "nori_deployment_smoke_failed",
+        checks: deploymentSmokeState.checks
+      }));
+    });
+  }
 });
 
 async function routeRequest(req: IncomingMessage, res: ServerResponse) {
@@ -44,15 +94,21 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse) {
 
   if (req.method === "GET" && url.pathname === "/healthz") {
     const readiness = getRuntimeReadiness(config);
-    return sendJson(res, readiness.ok ? 200 : 503, {
-      status: readiness.ok ? "ok" : "degraded",
+    const deploymentSmokePassed = deploymentSmokeState.status === "disabled" || deploymentSmokeState.status === "passed";
+    const ok = readiness.ok && deploymentSmokePassed;
+    return sendJson(res, ok ? 200 : 503, {
+      status: ok ? "ok" : "degraded",
       runtime: "pi-agent",
       agent: {
         id: AGENT_ID,
         name: AGENT_DISPLAY_NAME,
         description: AGENT_DESCRIPTION
       },
-      checks: readiness.checks,
+      checks: {
+        ...readiness.checks,
+        deploymentSmokePassed
+      },
+      deploymentSmoke: deploymentSmokeState,
       sokosumi: {
         pollerEnabled: config.sokosumiTaskPollerEnabled,
         mode: config.sokosumiCoworkerApiKey ? "api" : "mock"
@@ -117,4 +173,38 @@ function sendJson(res: ServerResponse, statusCode: number, body: unknown) {
   res.statusCode = statusCode;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(`${JSON.stringify(body)}\n`);
+}
+
+function logRequestFailure(event: string, error: any, req: IncomingMessage, statusCode?: number) {
+  const resolvedStatusCode = statusCode || Number(error?.statusCode) || 500;
+  console.error(JSON.stringify({
+    event,
+    method: req.method,
+    path: req.url,
+    requestId: requestIdFor(req),
+    statusCode: resolvedStatusCode,
+    durationMs: requestDurationMs(req),
+    error: {
+      name: error?.name || "Error",
+      message: error?.message || String(error)
+    }
+  }));
+}
+
+function headerValue(req: IncomingMessage, name: string) {
+  const value = req.headers[name] || req.headers[name.toLowerCase()];
+  return Array.isArray(value) ? value[0] : value || "";
+}
+
+function requestIdFor(req: IncomingMessage) {
+  const existing = requestIds.get(req);
+  if (existing) return existing;
+  const incoming = headerValue(req, "x-nori-request-id") || headerValue(req, "x-request-id");
+  const requestId = incoming || crypto.randomUUID();
+  requestIds.set(req, requestId);
+  return requestId;
+}
+
+function requestDurationMs(req: IncomingMessage) {
+  return Math.max(0, Date.now() - (requestStartedAt.get(req) || Date.now()));
 }

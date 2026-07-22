@@ -16,6 +16,8 @@ export type RuntimeConfig = {
   openRouterTemperature: number;
   openRouterSiteUrl: string;
   openRouterAppName: string;
+  deploymentSmokeTestEnabled: boolean;
+  deploymentSmokeTimeoutMs: number;
   sokosumiApiUrl: string;
   sokosumiCoworkerApiKey: string;
   sokosumiTaskPollerEnabled: boolean;
@@ -27,6 +29,12 @@ export type RuntimeConfig = {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
   const hasSokosumiKey = Boolean(env.SOKOSUMI_COWORKER_API_KEY);
+  const isRailwayRuntime = Boolean(
+    env.RAILWAY_ENVIRONMENT_ID ||
+    env.RAILWAY_ENVIRONMENT_NAME ||
+    env.RAILWAY_PROJECT_ID ||
+    env.RAILWAY_SERVICE_ID
+  );
 
   return {
     port: parsePositiveInteger(env.PORT, 3000),
@@ -43,6 +51,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
     openRouterTemperature: parseNumber(env.OPENROUTER_TEMPERATURE, 0.4),
     openRouterSiteUrl: env.OPENROUTER_SITE_URL || "",
     openRouterAppName: env.OPENROUTER_APP_NAME || "Nori Pi Agent",
+    deploymentSmokeTestEnabled: parseBoolean(env.NORI_DEPLOYMENT_SMOKE_TEST_ENABLED, isRailwayRuntime),
+    deploymentSmokeTimeoutMs: parsePositiveInteger(env.NORI_DEPLOYMENT_SMOKE_TIMEOUT_MS, 75000),
     sokosumiApiUrl: env.SOKOSUMI_API_URL || "https://api.preprod.sokosumi.com",
     sokosumiCoworkerApiKey: env.SOKOSUMI_COWORKER_API_KEY || "",
     sokosumiTaskPollerEnabled: parseBoolean(env.SOKOSUMI_TASK_POLLER_ENABLED, hasSokosumiKey),

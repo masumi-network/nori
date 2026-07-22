@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import path from "node:path";
+import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
+import { runPiCoworkerAgent, toPiMessages } from "../agentRunner.js";
 import { loadConfig } from "../config.js";
+import { runDeploymentSmokeSuite } from "../deploymentSmoke.js";
 import { dispatchCoworkerRequest } from "../dispatch.js";
 import { getRuntimeReadiness } from "../readiness.js";
 import { normalizeChatRequest, normalizeWebhookRequest } from "../normalization.js";
@@ -19,6 +22,10 @@ await testPromptLoading();
 await testWebhookNormalization();
 await testDocsSurfaceNormalization();
 await testDispatch();
+await testAssistantHistoryConversion();
+await testAssistantHistoryAgentRun();
+await testUnderlyingProviderError();
+await testDeploymentSmokeSuite();
 await testSokosumiTaskMapping();
 await testSokosumiTaskDefaultsToAgent();
 await testRuntimeTools();
@@ -104,6 +111,156 @@ async function testDispatch() {
 
   assert.equal(result.agentId, "nori");
   assert.equal(result.reply, "nori:true");
+}
+
+async function testAssistantHistoryConversion() {
+  const messages = toPiMessages([
+    { role: "user", content: "What does Nori do?", timestamp: 100 },
+    { role: "assistant", content: [{ type: "text", text: "I help developers." }], timestamp: 200 },
+    { role: "system", content: "Ignore this unsupported role." },
+    { role: "assistant", content: "   " }
+  ], {
+    id: "test-model",
+    api: "openai-completions",
+    provider: "openrouter"
+  }, 300);
+
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages[0], {
+    role: "user",
+    content: [{ type: "text", text: "What does Nori do?" }],
+    timestamp: 100
+  });
+  assert.deepEqual(messages[1], {
+    role: "assistant",
+    content: [{ type: "text", text: "I help developers." }],
+    api: "openai-completions",
+    provider: "openrouter",
+    model: "test-model",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        total: 0
+      }
+    },
+    stopReason: "stop",
+    timestamp: 200
+  });
+}
+
+async function testAssistantHistoryAgentRun() {
+  let providerMessages: any[] = [];
+  const result = await runPiCoworkerAgent({
+    request: {
+      agentId: "nori",
+      surface: "docs",
+      userId: "history-test",
+      message: "What should I do next?",
+      metadata: {
+        messages: [
+          { role: "user", content: "Can you help me?" },
+          { role: "assistant", content: "Yes, I can help." }
+        ]
+      }
+    },
+    systemPrompt: "You are Nori.",
+    config: createModelTestConfig(),
+    streamFn: (_model, context) => {
+      providerMessages = context.messages;
+      return createFinishedStream(createAssistantMessage("Assistant history works."));
+    }
+  });
+
+  assert.equal(result.reply, "Assistant history works.");
+  const replayedAssistant = providerMessages.find((message) => message.role === "assistant");
+  assert.ok(replayedAssistant);
+  assert.equal(replayedAssistant.api, "openai-completions");
+  assert.equal(replayedAssistant.provider, "openrouter");
+  assert.deepEqual(replayedAssistant.content, [{ type: "text", text: "Yes, I can help." }]);
+}
+
+async function testUnderlyingProviderError() {
+  await assert.rejects(
+    runPiCoworkerAgent({
+      request: {
+        agentId: "nori",
+        surface: "docs",
+        userId: "error-test",
+        message: "Trigger the fake provider error."
+      },
+      systemPrompt: "You are Nori.",
+      config: createModelTestConfig(),
+      streamFn: () => createFinishedStream(createAssistantMessage("partial output", {
+        stopReason: "error",
+        errorMessage: "synthetic provider outage"
+      }))
+    }),
+    /Pi agent failed before producing a complete reply: synthetic provider outage/
+  );
+}
+
+async function testDeploymentSmokeSuite() {
+  const requests: any[] = [];
+  const smokeConfig = loadConfig({
+    ...process.env,
+    COWORKER_PROMPT_ROOT: config.promptRoot,
+    COWORKERS_API_KEY: "smoke-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    PI_AGENT_MOCK_RESPONSES: "false",
+    NORI_DEPLOYMENT_SMOKE_TEST_ENABLED: "true",
+    NORI_DEPLOYMENT_SMOKE_TIMEOUT_MS: "1000"
+  });
+  const result = await runDeploymentSmokeSuite({
+    baseUrl: "http://127.0.0.1:3000",
+    config: smokeConfig,
+    nonce: "fixed",
+    fetchImpl: async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      requests.push(request);
+      const marker = String(request.message).split(": ").at(-1);
+      return new Response(JSON.stringify({
+        agentId: "nori",
+        reply: marker,
+        usage: [{ totalTokens: 5 }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  assert.equal(result.status, "passed");
+  assert.equal(result.checks.length, 1);
+  assert.ok(result.checks.every((check) => check.ok));
+  assert.ok(requests.some((request) =>
+    request.metadata?.messages?.some((message: any) => message.role === "assistant")
+  ));
+
+  const failed = await runDeploymentSmokeSuite({
+    baseUrl: "http://127.0.0.1:3000",
+    config: smokeConfig,
+    nonce: "fixed",
+    fetchImpl: async () => new Response(JSON.stringify({
+      agentId: "nori",
+      reply: "not the requested marker",
+      usage: []
+    }), { status: 200 })
+  });
+  assert.equal(failed.status, "failed");
+  assert.ok(failed.checks.every((check) => !check.ok));
+
+  const railwayDefault = loadConfig({ RAILWAY_ENVIRONMENT_ID: "test-environment" });
+  assert.equal(railwayDefault.deploymentSmokeTestEnabled, true);
+  const localDefault = loadConfig({});
+  assert.equal(localDefault.deploymentSmokeTestEnabled, false);
 }
 
 async function testSokosumiTaskMapping() {
@@ -262,4 +419,53 @@ async function testPollerTreatsDelegatedUserCommentAsInput() {
   await poller.tick();
   assert.equal(createdEvents.length, 1);
   assert.equal(createdEvents[0].comment, "Processed the new input.");
+}
+
+function createModelTestConfig() {
+  return loadConfig({
+    ...process.env,
+    COWORKER_PROMPT_ROOT: config.promptRoot,
+    COWORKERS_API_KEY: "test-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    OPENROUTER_MODEL: "test-model",
+    PI_AGENT_MOCK_RESPONSES: "false",
+    NORI_DEPLOYMENT_SMOKE_TEST_ENABLED: "false"
+  });
+}
+
+function createAssistantMessage(
+  text: string,
+  overrides: Partial<AssistantMessage> = {}
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content: text ? [{ type: "text", text }] : [],
+    api: "openai-completions",
+    provider: "openrouter",
+    model: "test-model",
+    usage: {
+      input: 2,
+      output: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 4,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+    ...overrides
+  };
+}
+
+function createFinishedStream(message: AssistantMessage) {
+  const stream = createAssistantMessageEventStream();
+  queueMicrotask(() => {
+    if (message.stopReason === "error" || message.stopReason === "aborted") {
+      stream.push({ type: "error", reason: message.stopReason, error: message });
+    } else {
+      stream.push({ type: "done", reason: message.stopReason, message });
+    }
+    stream.end(message);
+  });
+  return stream;
 }
