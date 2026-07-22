@@ -47,7 +47,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
     openRouterApiKey: env.OPENROUTER_API_KEY || "",
     openRouterModel: env.OPENROUTER_MODEL || "openai/gpt-4.1-mini",
     openRouterBaseUrl: env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
-    openRouterMaxCompletionTokens: parsePositiveInteger(env.OPENROUTER_MAX_COMPLETION_TOKENS, 1200),
+    openRouterMaxCompletionTokens: parsePositiveInteger(env.OPENROUTER_MAX_COMPLETION_TOKENS, 8000),
     openRouterTemperature: parseNumber(env.OPENROUTER_TEMPERATURE, 0.4),
     openRouterSiteUrl: env.OPENROUTER_SITE_URL || "",
     openRouterAppName: env.OPENROUTER_APP_NAME || "Nori Pi Agent",

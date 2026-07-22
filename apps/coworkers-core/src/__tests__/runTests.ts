@@ -261,6 +261,7 @@ async function testDeploymentSmokeSuite() {
   assert.equal(railwayDefault.deploymentSmokeTestEnabled, true);
   const localDefault = loadConfig({});
   assert.equal(localDefault.deploymentSmokeTestEnabled, false);
+  assert.equal(localDefault.openRouterMaxCompletionTokens, 8000);
 }
 
 async function testSokosumiTaskMapping() {
