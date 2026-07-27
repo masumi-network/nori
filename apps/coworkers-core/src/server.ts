@@ -6,6 +6,7 @@ import { assertAuthorized } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { createDeploymentSmokeState, runDeploymentSmokeSuite } from "./deploymentSmoke.js";
 import { dispatchCoworkerRequest } from "./dispatch.js";
+import { isNoriDocsPaymentConfigured } from "./docsPayment.js";
 import { normalizeChatRequest, normalizeWebhookRequest } from "./normalization.js";
 import { assertWithinRateLimit } from "./rateLimit.js";
 import { getRuntimeReadiness } from "./readiness.js";
@@ -27,6 +28,7 @@ const chatRoute = createPiAgentChatRouteHandler({
       requestId: requestIdFor(req),
       agentId: request.agentId,
       surface: request.surface,
+      hasPaymentEvent: Boolean(result.paymentEvent),
       durationMs: requestDurationMs(req)
     }));
     return result;
@@ -112,6 +114,11 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse) {
       sokosumi: {
         pollerEnabled: config.sokosumiTaskPollerEnabled,
         mode: config.sokosumiCoworkerApiKey ? "api" : "mock"
+      },
+      docsPayment: {
+        enabled: config.noriDocsPaymentEnabled,
+        configured: isNoriDocsPaymentConfigured(config),
+        network: config.masumiNetwork
       }
     });
   }

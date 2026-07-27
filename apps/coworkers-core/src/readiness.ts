@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { RuntimeConfig } from "./config.js";
+import { isNoriDocsPaymentConfigured } from "./docsPayment.js";
 import { AGENT_ID } from "./types.js";
 
 export type RuntimeReadiness = {
@@ -13,6 +14,9 @@ export function getRuntimeReadiness(config: RuntimeConfig): RuntimeReadiness {
     modelConfigured: config.piAgentMockResponses || Boolean(config.openRouterApiKey),
     authConfigured: !config.coworkersRequireAuth || Boolean(config.coworkersApiKey),
     sokosumiPollingConfigured: !config.sokosumiTaskPollerEnabled || Boolean(config.sokosumiCoworkerApiKey),
+    docsPaymentConfigured:
+      !config.noriDocsPaymentEnabled ||
+      isNoriDocsPaymentConfigured(config),
     promptConfigured: hasPrompt(config.promptRoot, AGENT_ID)
   };
 

@@ -69,6 +69,24 @@ Sokosumi worker:
 - `SOKOSUMI_TASK_POLL_LIMIT`
 - `SOKOSUMI_TASK_POLL_MAX_PAGES`
 
+Masumi payment requests for DevHub chat:
+
+- `NORI_DOCS_PAYMENT_ENABLED` (defaults to enabled on Railway and disabled locally)
+- `MASUMI_PAYMENT_API_URL`
+- `MASUMI_PAYMENT_API_TOKEN` or `MASUMI_PAYMENT_API_KEY`
+- `MASUMI_AGENT_IDENTIFIER` (or `NORI_AGENT_IDENTIFIER`)
+- `MASUMI_NETWORK` (`Preprod` or `Mainnet`)
+- `MASUMI_PAYMENT_TIMEOUT_MS`
+
+For `surface: "docs"`, `/v1/chat` creates a seller-side fixed-price Masumi
+payment request after the model completes and returns it as
+`paymentEvent.masumiPayment`. Nori's registered on-chain price is authoritative,
+so the request intentionally omits `RequestedFunds`. Payment creation fails
+closed: an enabled but incomplete configuration, a payment-service failure, or
+a malformed payment response makes the chat request fail instead of returning a
+paid answer without a usable payment event. Railway deployment smoke checks also
+require a valid payment event whenever docs payments are enabled.
+
 Local/test helpers:
 
 - `PI_AGENT_MOCK_RESPONSES=true` returns deterministic replies without model calls.
