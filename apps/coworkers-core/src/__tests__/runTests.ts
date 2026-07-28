@@ -18,11 +18,16 @@ import { createCoworkerRuntimeTools, RUNTIME_TOOL_NAMES } from "../tools.js";
 import { createSokosumiTaskPoller } from "@masumi-network/pi-sokosumi/poller";
 
 const config = loadConfig({
-  ...process.env,
   COWORKER_PROMPT_ROOT: path.resolve(process.cwd(), "..", "..", "src", "agents"),
   PI_AGENT_MOCK_RESPONSES: "true"
 });
 const docsAgentIdentifier = "a".repeat(120);
+
+assert.equal(
+  config.noriDocsPaymentEnabled,
+  false,
+  "tests must not inherit Railway payment settings or call a live payment service"
+);
 
 await testPromptLoading();
 await testWebhookNormalization();
@@ -219,7 +224,6 @@ async function testUnderlyingProviderError() {
 async function testDeploymentSmokeSuite() {
   const requests: any[] = [];
   const smokeConfig = loadConfig({
-    ...process.env,
     COWORKER_PROMPT_ROOT: config.promptRoot,
     COWORKERS_API_KEY: "smoke-key",
     OPENROUTER_API_KEY: "test-openrouter-key",
@@ -267,7 +271,6 @@ async function testDeploymentSmokeSuite() {
   assert.ok(failed.checks.every((check) => !check.ok));
 
   const paymentSmokeConfig = loadConfig({
-    ...process.env,
     COWORKER_PROMPT_ROOT: config.promptRoot,
     COWORKERS_API_KEY: "smoke-key",
     OPENROUTER_API_KEY: "test-openrouter-key",
@@ -532,7 +535,6 @@ async function testRuntimeTools() {
 
 async function testReadiness() {
   const readyConfig = loadConfig({
-    ...process.env,
     COWORKER_PROMPT_ROOT: config.promptRoot,
     COWORKERS_API_KEY: "test-key",
     OPENROUTER_API_KEY: "test-openrouter-key"
@@ -541,7 +543,6 @@ async function testReadiness() {
   assert.equal(readiness.ok, true);
 
   const missingSokosumiKeyConfig = loadConfig({
-    ...process.env,
     COWORKER_PROMPT_ROOT: config.promptRoot,
     COWORKERS_API_KEY: "test-key",
     OPENROUTER_API_KEY: "test-openrouter-key",
@@ -634,7 +635,6 @@ async function testPollerTreatsDelegatedUserCommentAsInput() {
 
 function createModelTestConfig() {
   return loadConfig({
-    ...process.env,
     COWORKER_PROMPT_ROOT: config.promptRoot,
     COWORKERS_API_KEY: "test-key",
     OPENROUTER_API_KEY: "test-openrouter-key",
