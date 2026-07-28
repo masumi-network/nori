@@ -1,6 +1,7 @@
 import { Agent, type AgentEvent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-core";
 import { streamSimple, type Message, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { RuntimeConfig } from "./config.js";
+import { maybeCreateNoriDocsPayment } from "./docsPayment.js";
 import { createCoworkerRuntimeTools, type RuntimeToolState } from "./tools.js";
 import type { CoworkerRequest, CoworkerResult } from "./types.js";
 import { AGENT_DISPLAY_NAME } from "./types.js";
@@ -17,9 +18,16 @@ export async function runPiCoworkerAgent({
   streamFn?: StreamFn;
 }): Promise<CoworkerResult> {
   if (config.piAgentMockResponses) {
+    const reply = `[${AGENT_DISPLAY_NAME} mock reply] ${request.message}`;
+    const paymentEvent = await maybeCreateNoriDocsPayment({
+      request,
+      reply,
+      config
+    });
     return {
       agentId: request.agentId,
-      reply: `[${AGENT_DISPLAY_NAME} mock reply] ${request.message}`,
+      reply,
+      ...(paymentEvent ? { paymentEvent } : {}),
       usage: []
     };
   }
@@ -72,12 +80,18 @@ export async function runPiCoworkerAgent({
   if (!reply) {
     throw new Error("Pi agent completed without an assistant reply.");
   }
+  const paymentEvent = await maybeCreateNoriDocsPayment({
+    request,
+    reply,
+    config
+  });
 
   return {
     agentId: request.agentId,
     reply,
     toolEvents: [...toolEvents, ...toolState.toolResults],
     usage,
+    ...(paymentEvent ? { paymentEvent } : {}),
     taskEventStatus: toolState.taskEventStatus
   };
 }

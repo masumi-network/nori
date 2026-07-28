@@ -118,6 +118,9 @@ async function runSmokeCase({
     if (!hasNonZeroModelUsage(result.usage)) {
       throw new Error("Nori returned no non-zero model token usage.");
     }
+    if (config.noriDocsPaymentEnabled && !hasUsablePaymentEvent(result.paymentEvent)) {
+      throw new Error("Nori returned no usable Masumi payment event.");
+    }
 
     return {
       id: smokeCase.id,
@@ -165,4 +168,13 @@ function hasNonZeroModelUsage(value: unknown) {
     const totalTokens = Number(usage.totalTokens);
     return Number.isFinite(totalTokens) && totalTokens > 0;
   });
+}
+
+function hasUsablePaymentEvent(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const event = value as Record<string, unknown>;
+  if (!event.masumiPayment || typeof event.masumiPayment !== "object") return false;
+  const payment = event.masumiPayment as Record<string, unknown>;
+  return ["blockchainIdentifier", "agentIdentifier", "sellerVkey", "inputHash"]
+    .every((field) => typeof payment[field] === "string" && payment[field].trim().length > 0);
 }

@@ -25,6 +25,12 @@ export type RuntimeConfig = {
   sokosumiTaskPollLimit: number;
   sokosumiTaskPollMaxPages: number;
   sokosumiMockEndpointEnabled: boolean;
+  noriDocsPaymentEnabled: boolean;
+  masumiPaymentApiUrl: string;
+  masumiPaymentApiToken: string;
+  masumiAgentIdentifier: string;
+  masumiNetwork: "Preprod" | "Mainnet";
+  masumiPaymentTimeoutMs: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig {
@@ -59,7 +65,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): RuntimeConfig 
     sokosumiTaskPollIntervalMs: parsePositiveInteger(env.SOKOSUMI_TASK_POLL_INTERVAL_MS, 15000),
     sokosumiTaskPollLimit: parsePositiveInteger(env.SOKOSUMI_TASK_POLL_LIMIT, 20),
     sokosumiTaskPollMaxPages: parsePositiveInteger(env.SOKOSUMI_TASK_POLL_MAX_PAGES, 10),
-    sokosumiMockEndpointEnabled: parseBoolean(env.SOKOSUMI_MOCK_ENDPOINT_ENABLED, false)
+    sokosumiMockEndpointEnabled: parseBoolean(env.SOKOSUMI_MOCK_ENDPOINT_ENABLED, false),
+    noriDocsPaymentEnabled: parseBoolean(env.NORI_DOCS_PAYMENT_ENABLED, isRailwayRuntime),
+    masumiPaymentApiUrl: env.MASUMI_PAYMENT_API_URL || env.MASUMI_API_URL || "",
+    masumiPaymentApiToken:
+      env.MASUMI_PAYMENT_API_TOKEN ||
+      env.MASUMI_PAYMENT_API_KEY ||
+      env.MASUMI_API_TOKEN ||
+      "",
+    masumiAgentIdentifier:
+      env.MASUMI_AGENT_IDENTIFIER ||
+      env.NORI_AGENT_IDENTIFIER ||
+      "",
+    masumiNetwork: parseMasumiNetwork(env.MASUMI_NETWORK || "Preprod"),
+    masumiPaymentTimeoutMs: parsePositiveInteger(env.MASUMI_PAYMENT_TIMEOUT_MS, 30000)
   };
 }
 
@@ -84,4 +103,11 @@ function parsePositiveInteger(value: string | undefined, fallback: number) {
 function parseNumber(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseMasumiNetwork(value: string): "Preprod" | "Mainnet" {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "preprod" || normalized === "preproduction") return "Preprod";
+  if (normalized === "mainnet") return "Mainnet";
+  throw new Error(`Unsupported MASUMI_NETWORK: ${value}`);
 }

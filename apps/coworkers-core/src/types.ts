@@ -27,6 +27,12 @@ export type CoworkerResult = {
   reply: string;
   toolEvents?: unknown[];
   usage?: unknown[];
+  paymentEvent?: {
+    taskId: string;
+    eventId: string;
+    resultHash: string;
+    masumiPayment: Record<string, unknown>;
+  };
   taskEventStatus?: {
     status: "COMPLETED" | "INPUT_REQUIRED" | "FAILED";
     reason?: string;

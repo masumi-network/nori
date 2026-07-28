@@ -5,6 +5,11 @@ import { runPiCoworkerAgent, toPiMessages } from "../agentRunner.js";
 import { loadConfig } from "../config.js";
 import { runDeploymentSmokeSuite } from "../deploymentSmoke.js";
 import { dispatchCoworkerRequest } from "../dispatch.js";
+import {
+  createNoriDocsInputHash,
+  maybeCreateNoriDocsPayment,
+  NoriDocsPaymentError
+} from "../docsPayment.js";
 import { getRuntimeReadiness } from "../readiness.js";
 import { normalizeChatRequest, normalizeWebhookRequest } from "../normalization.js";
 import { buildSystemPrompt } from "../prompts.js";
@@ -17,6 +22,7 @@ const config = loadConfig({
   COWORKER_PROMPT_ROOT: path.resolve(process.cwd(), "..", "..", "src", "agents"),
   PI_AGENT_MOCK_RESPONSES: "true"
 });
+const docsAgentIdentifier = "a".repeat(120);
 
 await testPromptLoading();
 await testWebhookNormalization();
@@ -26,6 +32,9 @@ await testAssistantHistoryConversion();
 await testAssistantHistoryAgentRun();
 await testUnderlyingProviderError();
 await testDeploymentSmokeSuite();
+await testDocsPaymentResponseContract();
+await testDocsPaymentFailsClosed();
+await testDocsPaymentAgentIntegration();
 await testSokosumiTaskMapping();
 await testSokosumiTaskDefaultsToAgent();
 await testRuntimeTools();
@@ -257,11 +266,195 @@ async function testDeploymentSmokeSuite() {
   assert.equal(failed.status, "failed");
   assert.ok(failed.checks.every((check) => !check.ok));
 
+  const paymentSmokeConfig = loadConfig({
+    ...process.env,
+    COWORKER_PROMPT_ROOT: config.promptRoot,
+    COWORKERS_API_KEY: "smoke-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    PI_AGENT_MOCK_RESPONSES: "false",
+    NORI_DEPLOYMENT_SMOKE_TEST_ENABLED: "true",
+    NORI_DEPLOYMENT_SMOKE_TIMEOUT_MS: "1000",
+    NORI_DOCS_PAYMENT_ENABLED: "true",
+    MASUMI_PAYMENT_API_URL: "https://payments.example",
+    MASUMI_PAYMENT_API_TOKEN: "payment-token",
+    MASUMI_AGENT_IDENTIFIER: "a".repeat(120)
+  });
+  const missingPayment = await runDeploymentSmokeSuite({
+    baseUrl: "http://127.0.0.1:3000",
+    config: paymentSmokeConfig,
+    nonce: "fixed",
+    fetchImpl: async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const marker = String(request.message).split(": ").at(-1);
+      return new Response(JSON.stringify({
+        agentId: "nori",
+        reply: marker,
+        usage: [{ totalTokens: 5 }]
+      }), { status: 200 });
+    }
+  });
+  assert.equal(missingPayment.status, "failed");
+  assert.match(missingPayment.checks[0].error || "", /payment event/);
+
+  const paymentReady = await runDeploymentSmokeSuite({
+    baseUrl: "http://127.0.0.1:3000",
+    config: paymentSmokeConfig,
+    nonce: "fixed",
+    fetchImpl: async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      const marker = String(request.message).split(": ").at(-1);
+      return new Response(JSON.stringify({
+        agentId: "nori",
+        reply: marker,
+        usage: [{ totalTokens: 5 }],
+        paymentEvent: {
+          masumiPayment: {
+            blockchainIdentifier: "blockchain-1",
+            agentIdentifier: "agent-1",
+            sellerVkey: "seller-vkey",
+            inputHash: "input-hash"
+          }
+        }
+      }), { status: 200 });
+    }
+  });
+  assert.equal(paymentReady.status, "passed");
+
   const railwayDefault = loadConfig({ RAILWAY_ENVIRONMENT_ID: "test-environment" });
   assert.equal(railwayDefault.deploymentSmokeTestEnabled, true);
   const localDefault = loadConfig({});
   assert.equal(localDefault.deploymentSmokeTestEnabled, false);
   assert.equal(localDefault.openRouterMaxCompletionTokens, 8000);
+}
+
+async function testDocsPaymentResponseContract() {
+  const requests: Array<{ url: string; body: Record<string, any> }> = [];
+  const request = createDocsRequest();
+  const docsConfig = createDocsPaymentConfig();
+  const paymentEvent = await maybeCreateNoriDocsPayment({
+    request,
+    reply: "Masumi locks the buyer's funds in escrow.",
+    config: docsConfig,
+    options: {
+      taskId: "task_nori_docs_contract",
+      eventId: "evt_nori_docs_contract",
+      randomIdentifier: () => "aabbccddeeff0011",
+      now: () => new Date("2026-07-27T10:00:00.000Z"),
+      fetchImpl: async (url, init) => {
+        const body = JSON.parse(String(init?.body || "{}"));
+        requests.push({ url: String(url), body });
+        return paymentResponse(body);
+      }
+    }
+  });
+
+  assert.ok(paymentEvent);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "https://payments.example/api/v1/payment");
+  assert.equal(requests[0].body.agentIdentifier, docsAgentIdentifier);
+  assert.equal(requests[0].body.network, "Preprod");
+  assert.equal(requests[0].body.inputHash, createNoriDocsInputHash(request));
+  assert.equal(requests[0].body.identifierFromPurchaser, "aabbccddeeff0011");
+  assert.equal(requests[0].body.payByTime, "2026-07-28T02:00:00.000Z");
+  assert.equal(requests[0].body.submitResultTime, "2026-07-28T03:00:00.000Z");
+  assert.equal("RequestedFunds" in requests[0].body, false);
+
+  assert.equal(paymentEvent.taskId, "task_nori_docs_contract");
+  assert.equal(paymentEvent.eventId, "evt_nori_docs_contract");
+  assert.match(paymentEvent.resultHash, /^[0-9a-f]{64}$/);
+  assert.equal(paymentEvent.masumiPayment.blockchainIdentifier, "blockchain-payment-1");
+  assert.equal(paymentEvent.masumiPayment.agentIdentifier, docsAgentIdentifier);
+  assert.equal(paymentEvent.masumiPayment.sellerVkey, "seller-vkey");
+  assert.equal(paymentEvent.masumiPayment.inputHash, requests[0].body.inputHash);
+  assert.equal(paymentEvent.masumiPayment.identifierFromPurchaser, "aabbccddeeff0011");
+  assert.equal(paymentEvent.masumiPayment.unlockTime, "1785193200000");
+  assert.deepEqual(paymentEvent.masumiPayment.Amounts, [
+    { amount: "2500", unit: "test-token" }
+  ]);
+  assert.deepEqual(paymentEvent.masumiPayment.PaymentSource, {
+    network: "Preprod",
+    smartContractAddress: "addr_test_contract",
+    policyId: "policy-id"
+  });
+}
+
+async function testDocsPaymentFailsClosed() {
+  const request = createDocsRequest();
+  const docsConfig = createDocsPaymentConfig();
+
+  await assert.rejects(
+    maybeCreateNoriDocsPayment({
+      request,
+      reply: "answer",
+      config: docsConfig,
+      options: {
+        randomIdentifier: () => "aabbccddeeff0011",
+        fetchImpl: async (_url, init) => {
+          const body = JSON.parse(String(init?.body || "{}"));
+          const response = await paymentResponse(body).json() as any;
+          response.data.SmartContractWallet = null;
+          return new Response(JSON.stringify(response), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          });
+        }
+      }
+    }),
+    (error) =>
+      error instanceof NoriDocsPaymentError &&
+      /sellerVkey/.test(error.message)
+  );
+
+  await assert.rejects(
+    maybeCreateNoriDocsPayment({
+      request,
+      reply: "answer",
+      config: loadConfig({
+        NORI_DOCS_PAYMENT_ENABLED: "true",
+        MASUMI_PAYMENT_API_URL: "",
+        MASUMI_API_URL: "",
+        MASUMI_PAYMENT_API_TOKEN: "",
+        MASUMI_PAYMENT_API_KEY: "",
+        MASUMI_API_TOKEN: "",
+        MASUMI_AGENT_IDENTIFIER: "",
+        NORI_AGENT_IDENTIFIER: ""
+      })
+    }),
+    /payments are enabled but/
+  );
+}
+
+async function testDocsPaymentAgentIntegration() {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body || "{}"));
+    return paymentResponse(body);
+  }) as typeof fetch;
+
+  try {
+    const result = await runPiCoworkerAgent({
+      request: createDocsRequest(),
+      systemPrompt: "You are Nori.",
+      config: createDocsPaymentConfig({
+        OPENROUTER_API_KEY: "test-openrouter-key",
+        OPENROUTER_MODEL: "test-model",
+        PI_AGENT_MOCK_RESPONSES: "false"
+      }),
+      streamFn: () => createFinishedStream(
+        createAssistantMessage("The paid Nori response completed.")
+      )
+    });
+
+    assert.equal(result.reply, "The paid Nori response completed.");
+    assert.ok(result.paymentEvent);
+    assert.equal(
+      result.paymentEvent.masumiPayment.blockchainIdentifier,
+      "blockchain-payment-1"
+    );
+    assert.equal(result.paymentEvent.masumiPayment.sellerVkey, "seller-vkey");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }
 
 async function testSokosumiTaskMapping() {
@@ -358,6 +551,23 @@ async function testReadiness() {
   const missingSokosumiKeyReadiness = getRuntimeReadiness(missingSokosumiKeyConfig);
   assert.equal(missingSokosumiKeyReadiness.ok, false);
   assert.equal(missingSokosumiKeyReadiness.checks.sokosumiPollingConfigured, false);
+
+  const missingDocsPaymentConfig = loadConfig({
+    COWORKER_PROMPT_ROOT: config.promptRoot,
+    COWORKERS_API_KEY: "test-key",
+    OPENROUTER_API_KEY: "test-openrouter-key",
+    NORI_DOCS_PAYMENT_ENABLED: "true",
+    MASUMI_PAYMENT_API_URL: "",
+    MASUMI_API_URL: "",
+    MASUMI_PAYMENT_API_TOKEN: "",
+    MASUMI_PAYMENT_API_KEY: "",
+    MASUMI_API_TOKEN: "",
+    MASUMI_AGENT_IDENTIFIER: "",
+    NORI_AGENT_IDENTIFIER: ""
+  });
+  const missingDocsPaymentReadiness = getRuntimeReadiness(missingDocsPaymentConfig);
+  assert.equal(missingDocsPaymentReadiness.ok, false);
+  assert.equal(missingDocsPaymentReadiness.checks.docsPaymentConfigured, false);
 }
 
 async function testCompletedEventsIncludeCredits() {
@@ -431,6 +641,63 @@ function createModelTestConfig() {
     OPENROUTER_MODEL: "test-model",
     PI_AGENT_MOCK_RESPONSES: "false",
     NORI_DEPLOYMENT_SMOKE_TEST_ENABLED: "false"
+  });
+}
+
+function createDocsRequest() {
+  return {
+    agentId: "nori" as const,
+    surface: "docs" as const,
+    userId: "docs-user",
+    message: "How do Masumi payments work?",
+    attachments: [{ name: "context.txt" }],
+    metadata: {
+      source: "masumi-dev-portal"
+    }
+  };
+}
+
+function createDocsPaymentConfig(overrides: Record<string, string> = {}) {
+  return loadConfig({
+    COWORKER_PROMPT_ROOT: config.promptRoot,
+    COWORKERS_API_KEY: "test-key",
+    NORI_DOCS_PAYMENT_ENABLED: "true",
+    MASUMI_PAYMENT_API_URL: "https://payments.example",
+    MASUMI_PAYMENT_API_TOKEN: "payment-token",
+    MASUMI_AGENT_IDENTIFIER: docsAgentIdentifier,
+    MASUMI_NETWORK: "Preprod",
+    ...overrides
+  });
+}
+
+function paymentResponse(requestBody: Record<string, any>) {
+  return new Response(JSON.stringify({
+    status: "success",
+    data: {
+      id: "payment-1",
+      blockchainIdentifier: "blockchain-payment-1",
+      agentIdentifier: requestBody.agentIdentifier,
+      inputHash: requestBody.inputHash,
+      identifierFromPurchaser: requestBody.identifierFromPurchaser,
+      payByTime: "1785168000000",
+      submitResultTime: "1785171600000",
+      unlockTime: "1785193200000",
+      externalDisputeUnlockTime: "1785214800000",
+      RequestedFunds: [
+        { amount: "2500", unit: "test-token" }
+      ],
+      SmartContractWallet: {
+        walletVkey: "seller-vkey"
+      },
+      PaymentSource: {
+        network: requestBody.network,
+        smartContractAddress: "addr_test_contract",
+        policyId: "policy-id"
+      }
+    }
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
   });
 }
 
