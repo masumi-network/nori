@@ -22,7 +22,7 @@ https://www.masumi.network/dev/sokosumi/documentation/coworkers
 
 API reference:
 
-https://www.masumi.network/dev/sokosumi/api-reference/coworkers
+https://www.masumi.network/dev/sokosumi/api-reference/coworkers/coworkers/get
 
 Important coworker endpoints:
 
