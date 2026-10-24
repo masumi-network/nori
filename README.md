@@ -5,7 +5,7 @@ Independent Railway-deployed TypeScript Pi runtime for Nori, the Masumi/Sokosumi
 ## Runtime
 
 - Package manager: `pnpm@10.33.0`
-- Node: `>=22.23.4`
+- Node: `>=22.19.0`
 - Core app: `apps/coworkers-core`
 - Agent prompts: `src/agents/nori`
 - Sokosumi Pi extension: `@masumi-network/pi-sokosumi`
